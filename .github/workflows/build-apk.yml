@@ -1,0 +1,74 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Extract Soundscape project
+        run: unzip -q Soundscape-Flutter-Android.zip -d extracted
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android runner
+        working-directory: extracted/Soundscape
+        run: flutter create --platforms=android --org com.builtby3 .
+
+      - name: Add Android media permissions
+        working-directory: extracted/Soundscape
+        shell: python
+        run: |
+          from pathlib import Path
+          manifest = Path('android/app/src/main/AndroidManifest.xml')
+          text = manifest.read_text()
+          permissions = '''
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+          '''
+          text = text.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', '<manifest xmlns:android="http://schemas.android.com/apk/res/android">' + permissions)
+          text = text.replace('android:label="soundscape"', 'android:label="Soundscape"')
+          manifest.write_text(text)
+
+      - name: Install packages
+        working-directory: extracted/Soundscape
+        run: flutter pub get
+
+      - name: Analyze source
+        working-directory: extracted/Soundscape
+        run: flutter analyze
+
+      - name: Run tests
+        working-directory: extracted/Soundscape
+        run: flutter test
+
+      - name: Build release APK
+        working-directory: extracted/Soundscape
+        run: flutter build apk --release
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Soundscape-Android-APK
+          path: extracted/Soundscape/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
